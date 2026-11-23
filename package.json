@@ -1,0 +1,17 @@
+{
+  "name": "pa-review-copilot-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "React UI for PA Review Copilot. A prebuilt copy is already in dist/, so you only need this to change the UI.",
+  "scripts": {
+    "build": "esbuild src/main.jsx --bundle --minify --jsx=automatic --loader:.js=jsx --outfile=dist/app.js",
+    "watch": "esbuild src/main.jsx --bundle --jsx=automatic --loader:.js=jsx --outfile=dist/app.js --watch"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

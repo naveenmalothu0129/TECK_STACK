@@ -1,0 +1,151 @@
+{
+  "_note": "Simplified synthetic coverage rules for the prototype. Production plugs in the plan's licensed criteria (InterQual/MCG) and approved medical policy.",
+  "document_types": {
+    "request_form": "Request form",
+    "clinical_note": "Clinical note",
+    "imaging": "Imaging report",
+    "lab_report": "Lab report"
+  },
+  "common_facts": [
+    {"key": "requested_code", "label": "Requested code", "type": "string",
+     "description": "CPT/HCPCS code on the request form", "sources": ["request_form"],
+     "patterns": ["CPT(?:/HCPCS)?:\\s*([0-9]{5}|[A-Z][0-9]{4})"], "ask": "CPT/HCPCS code for the requested service"},
+    {"key": "diagnosis_icd10", "label": "Diagnosis code", "type": "string",
+     "description": "Primary ICD-10 diagnosis code on the request form", "sources": ["request_form"],
+     "patterns": ["ICD-10\\)?:\\s*([A-Z][0-9]{2}(?:\\.[0-9A-Z]{1,4})?)"], "ask": "Primary ICD-10 diagnosis code"}
+  ],
+  "services": {
+    "27447": {
+      "policy_id": "MP-ORTHO-027", "version": "2026.3", "title": "Total knee replacement",
+      "facts": [
+        {"key": "request_laterality", "label": "Side on request form", "type": "enum",
+         "description": "Side (left/right) written on the request form", "sources": ["request_form"],
+         "patterns": ["Laterality:\\s*(Left|Right)"], "ask": "Which knee (left or right) the surgery is for"},
+        {"key": "clinical_laterality", "label": "Side in clinical notes", "type": "enum",
+         "description": "Side of the affected knee described in the clinical notes or imaging", "sources": ["clinical_note", "imaging"],
+         "patterns": ["\\b(left|right)\\s+knee\\b"], "ask": "Clinical note identifying the affected knee"},
+        {"key": "kl_grade", "label": "Arthritis grade on x-ray", "type": "number",
+         "description": "Kellgren-Lawrence osteoarthritis grade (0-4) on the x-ray report", "sources": ["imaging"],
+         "patterns": ["Kellgren[- ]Lawrence\\s+grade\\s*(\\d)"], "ask": "Knee x-ray report stating the arthritis grade"},
+        {"key": "pt_weeks", "label": "Physical therapy", "type": "number", "unit": "weeks",
+         "description": "Total weeks of supervised physical therapy completed", "sources": ["clinical_note"],
+         "patterns": ["(\\d+)\\s+weeks?\\s+of\\s+(?:supervised\\s+)?physical therapy"],
+         "ask": "Physical therapy records showing dates or total weeks completed"},
+        {"key": "nsaid_trial", "label": "Anti-inflammatory medicine tried", "type": "bool",
+         "description": "Documented trial of an NSAID such as naproxen, ibuprofen or meloxicam", "sources": ["clinical_note"],
+         "patterns": ["\\b(?:NSAID|naproxen|ibuprofen|meloxicam|celecoxib)\\b"], "negation": true,
+         "ask": "Anti-inflammatory medicine trial (drug, how long, result)"},
+        {"key": "bmi", "label": "BMI", "type": "number",
+         "description": "Body mass index", "sources": ["clinical_note"],
+         "patterns": ["BMI[:\\s]*(\\d{2}(?:\\.\\d)?)"], "ask": "Current BMI"}
+      ],
+      "criteria": [
+        {"id": "TKA-1", "title": "Diagnosis is knee osteoarthritis",
+         "rule": {"fact": "diagnosis_icd10", "op": "startswith", "value": ["M17"], "need": "Diagnosis code M17.x (knee osteoarthritis)"}},
+        {"id": "TKA-2", "title": "Severe arthritis on x-ray",
+         "rule": {"fact": "kl_grade", "op": ">=", "value": 3, "need": "Arthritis grade 3 or 4"}},
+        {"id": "TKA-3", "title": "Conservative treatment tried first",
+         "rule": {"all": [
+           {"fact": "pt_weeks", "op": ">=", "value": 12, "need": "At least 12 weeks of physical therapy"},
+           {"fact": "nsaid_trial", "op": "==", "value": true, "need": "Anti-inflammatory medicine tried"}]}},
+        {"id": "TKA-4", "title": "Safe for surgery",
+         "rule": {"fact": "bmi", "op": "<", "value": 40, "need": "BMI below 40"}}
+      ],
+      "must_match": [
+        {"facts": ["request_laterality", "clinical_laterality"], "code": "LATERALITY_MISMATCH",
+         "title": "Left and right knee don't match",
+         "action": "Call the provider to confirm which knee before any decision (wrong-site surgery risk)."}
+      ]
+    },
+    "72148": {
+      "policy_id": "MP-RAD-112", "version": "2026.1", "title": "MRI of the lower back",
+      "facts": [
+        {"key": "symptom_weeks", "label": "How long symptoms have lasted", "type": "number", "unit": "weeks",
+         "description": "Weeks the back or leg symptoms have been present", "sources": ["clinical_note"],
+         "patterns": ["(?:pain|symptoms?)[^.\\n]{0,60}?for\\s+(\\d+)\\s+weeks"], "ask": "How long the current symptoms have lasted"},
+        {"key": "pt_weeks", "label": "Physical therapy", "type": "number", "unit": "weeks",
+         "description": "Total weeks of supervised physical therapy completed", "sources": ["clinical_note"],
+         "patterns": ["(\\d+)\\s+weeks?\\s+of\\s+(?:supervised\\s+)?physical therapy"],
+         "ask": "Physical therapy records showing dates or total weeks completed"},
+        {"key": "red_flag", "label": "Red-flag symptoms", "type": "bool",
+         "description": "Red flags: cauda equina signs, saddle anesthesia, urinary retention, progressive neurologic deficit, suspected cancer or infection", "sources": ["clinical_note"],
+         "patterns": ["(?:red flag|cauda equina|saddle anesthesia|urinary retention|progressive (?:neurologic deficit|weakness))"], "negation": true,
+         "ask": "Red-flag screening (nerve symptoms, bladder or bowel changes, cancer or infection)"}
+      ],
+      "criteria": [
+        {"id": "MRI-1", "title": "Diagnosis supports a spine MRI",
+         "rule": {"fact": "diagnosis_icd10", "op": "startswith", "value": ["M54.5", "M54.1", "M51", "G83.4"], "need": "Back pain, sciatica, disc or cauda equina diagnosis"}},
+        {"id": "MRI-2", "title": "Physical therapy tried, or an emergency",
+         "rule": {"any": [
+           {"fact": "pt_weeks", "op": ">=", "value": 6, "need": "At least 6 weeks of physical therapy"},
+           {"fact": "red_flag", "op": "==", "value": true, "need": "Red-flag symptoms present"}]}},
+        {"id": "MRI-3", "title": "Symptoms lasted long enough, or an emergency",
+         "rule": {"any": [
+           {"fact": "symptom_weeks", "op": ">=", "value": 6, "need": "Symptoms for at least 6 weeks"},
+           {"fact": "red_flag", "op": "==", "value": true, "need": "Red-flag symptoms present"}]}}
+      ],
+      "must_match": []
+    },
+    "J0135": {
+      "policy_id": "MP-RX-044", "version": "2026.2", "title": "Adalimumab (Humira) for rheumatoid arthritis",
+      "facts": [
+        {"key": "mtx_months", "label": "Methotrexate tried", "type": "number", "unit": "months",
+         "description": "Months of methotrexate tried before this request", "sources": ["clinical_note"],
+         "patterns": ["methotrexate[^.\\n]{0,60}?for\\s*(\\d+)\\s*months"], "ask": "Methotrexate history (dose, how long, result)"},
+        {"key": "tb_result", "label": "TB test result", "type": "enum",
+         "description": "Latent TB screening result (negative or positive)", "sources": ["clinical_note", "lab_report"],
+         "patterns": ["(?:QuantiFERON|TB test|IGRA|PPD)[^.\\n]{0,60}?\\b(negative|positive)\\b"],
+         "ask": "TB test result (QuantiFERON or skin test) from the last 12 months"},
+        {"key": "tb_date", "label": "TB test date", "type": "date",
+         "description": "Date of the TB screening test (YYYY-MM-DD)", "sources": ["clinical_note", "lab_report"],
+         "patterns": ["(?:QuantiFERON|TB test|IGRA|PPD)[^.\\n]{0,80}?(\\d{4}-\\d{2}-\\d{2})"], "ask": "Date of the TB test"},
+        {"key": "active_infection", "label": "Active serious infection", "type": "bool",
+         "description": "Active serious infection present", "sources": ["clinical_note"],
+         "patterns": ["active (?:serious )?infection"], "negation": true, "ask": "Whether the patient has an active infection"}
+      ],
+      "criteria": [
+        {"id": "RX-1", "title": "Diagnosis is rheumatoid arthritis",
+         "rule": {"fact": "diagnosis_icd10", "op": "startswith", "value": ["M05", "M06"], "need": "Diagnosis code M05 or M06"}},
+        {"id": "RX-2", "title": "Prescribed by a specialist",
+         "rule": {"fact": "prescriber_specialty", "op": "==", "value": "Rheumatology", "need": "Prescriber is a rheumatologist"}},
+        {"id": "RX-3", "title": "Standard drug tried first",
+         "rule": {"fact": "mtx_months", "op": ">=", "value": 3, "need": "At least 3 months of methotrexate"}},
+        {"id": "RX-4", "title": "Recent negative TB test",
+         "rule": {"all": [
+           {"fact": "tb_result", "op": "==", "value": "negative", "need": "TB test is negative"},
+           {"fact": "tb_date", "op": "within_days", "value": 365, "need": "TB test done in the last 12 months"}]}},
+        {"id": "RX-5", "title": "No active infection",
+         "rule": {"fact": "active_infection", "op": "==", "value": false, "need": "No active serious infection"}}
+      ],
+      "must_match": []
+    },
+    "95810": {
+      "policy_id": "MP-SLEEP-009", "version": "2026.1", "title": "In-lab sleep study",
+      "facts": [
+        {"key": "epworth", "label": "Sleepiness score (Epworth)", "type": "number",
+         "description": "Epworth Sleepiness Scale score", "sources": ["clinical_note"],
+         "patterns": ["Epworth(?: Sleepiness Scale)?(?: score)?[:\\s]*(\\d{1,2})"], "ask": "Epworth sleepiness score"},
+        {"key": "home_test", "label": "Home sleep test", "type": "enum",
+         "description": "Prior home sleep test: positive, negative, inconclusive or not_performed", "sources": ["clinical_note"],
+         "patterns": ["home sleep (?:apnea )?test[^.\\n]{0,40}?\\b(inconclusive|negative|positive|not (?:been )?performed)\\b"],
+         "map": {"not performed": "not_performed", "not been performed": "not_performed"},
+         "ask": "Home sleep test result, or why it can't be done"},
+        {"key": "comorbidity", "label": "Condition that rules out home testing", "type": "bool",
+         "description": "Heart failure, COPD or neuromuscular disease (makes home testing unreliable)", "sources": ["clinical_note"],
+         "patterns": ["(?:heart failure|\\bCOPD\\b|neuromuscular disease)"], "negation": true,
+         "ask": "Heart, lung or neuromuscular conditions"}
+      ],
+      "criteria": [
+        {"id": "PSG-1", "title": "Suspected sleep apnea",
+         "rule": {"fact": "diagnosis_icd10", "op": "startswith", "value": ["G47.3"], "need": "Diagnosis code G47.3x"}},
+        {"id": "PSG-2", "title": "Daytime sleepiness",
+         "rule": {"fact": "epworth", "op": ">=", "value": 10, "need": "Sleepiness score 10 or higher"}},
+        {"id": "PSG-3", "title": "Home test not suitable",
+         "rule": {"any": [
+           {"fact": "comorbidity", "op": "==", "value": true, "need": "Condition that rules out home testing"},
+           {"fact": "home_test", "op": "in", "value": ["negative", "inconclusive"], "need": "Home test already tried (negative or inconclusive)"}]}}
+      ],
+      "must_match": []
+    }
+  }
+}
